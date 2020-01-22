@@ -1,0 +1,128 @@
+---
+title: "Back In My Day..."
+author: "Brandon Chan"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+One day when I was at home for the break, I was driving my mom to a restaurant for lunch. I turned on the radio during the drive and after a couple songs my mom says "songs today are so annoying. Songs from before are better." While I was jamming out to thank u next, I just thought my mom was just doing what old people do and hating on anything current, but recently I actually found myself thinking the same thing from time to time. Maybe Mom was right or maybe I'm getting old. Either way, I wanted to find out for myself if songs really are more annoying now or not.
+
+To get to the bottom of this, I needed data. The dataset I used was Spotify data on all of the songs that have been on the Billboard Hot 100 from 2000 to 2018. The Hot 100 songs are the songs that the most people listen to and the songs that people refer to the most when they say songs have gotten dumb and annoying. This dataset has tons of information on each song, but the pieces of information I focused on were the dates the songs entered the Hot 100 and the song's lyrics.
+
+```{r reading in data, echo = FALSE, message = FALSE}
+#LEARN TEXT COMPRESSION AS A BETTER WAY TO SHOW REPETIVENESS IN SONGS
+
+billboard <- read.csv("~/SCHOOL/Winter 19/billboard_2000_2018_spotify_lyrics.csv", comment.char="#")
+commonWords<- read.csv("~/SCHOOL/Spring 19/commonwords.xlsx.csv", sep="")
+library(tidyverse)
+library(lubridate)
+```
+
+```{r cleaning, echo = FALSE, message = FALSE}
+billboard <- billboard %>% 
+  mutate(date = parse_date_time(date, order = "mdy")) %>% 
+  mutate(lyrics = as.character(lyrics)) %>% 
+  filter(lyrics != "Error: Could not find lyrics.") %>%
+  filter(lyrics != "INSTRUMENTAL") %>% 
+  filter(broad_genre != "unknown" & energy != "unknown" & liveness != "unknown" & tempo != "unknown" & speechiness != "unknown" & acousticness != "unknown" & instrumentalness != "unknown" & danceability != "unknown" & loudness != "unknown" & valence != "unknown") 
+
+billboard <- billboard[!(is.na(billboard$broad_genre) | billboard$broad_genre==""), ]
+
+billboard[18:29] <- as.numeric(as.character(unlist(billboard[18:29])))
+
+billboard <- billboard[rowSums(is.na(billboard)) == 0,]
+
+billboard <- billboard[which(str_to_upper(billboard$lyrics) != "INSTRUMENTAL" & as.character(billboard$change) != "Re-Entry"),]
+```
+
+I measured the annoyance of a song by calculating the repetitiveness in the lyrics. I figured songs that repeat the same words over and over again were the songs that annoyed people the most. I measured repetitiveness as the ratio of the number of unique words to the total number of words in a song expressed as a percentage. This means songs with higher ratios are less repetitive and songs with lower ratios are more repetitive. I excluded common every day words like "the", "to", "and", etc. because I only wanted "meaningful" words to be counted in the ratio.
+
+```{r rep function, echo = FALSE, message = FALSE}
+dumbness <- function(lyrics)
+{
+  no_new_lines <- gsub("\n", " ", lyrics)
+  all_lower <- str_replace_all(no_new_lines, "[:punct:]", "")
+  word_list <- unlist(str_split(all_lower, " "))
+  word_list <- word_list[word_list != ""]
+  word_list <- word_list[!(word_list %in% as.character(commonWords$Word[1:50]))]
+  unique_words <- unique(word_list)
+  return(100 * (length(unique_words) / length(word_list)))
+}
+```
+
+```{r, echo = FALSE, message = FALSE}
+billboard$repetition_ratio <- c()
+for (row in c(1:nrow(billboard)))
+{
+  billboard$repetition_ratio[row] <- dumbness(billboard$lyrics[row])
+}
+billboard <- billboard[rowSums(is.na(billboard)) == 0,]
+```
+
+To test the accuracy of this measure of stupidity and annoyance, I looked the songs with the lowest repitition ratios to see if they really were dumb and annoying.
+
+```{r most rep, fig.align='center', warning = FALSE, echo = FALSE, message = FALSE}
+most_rep <- billboard %>% 
+  top_n(-10, repetition_ratio) %>% 
+  arrange(repetition_ratio)
+
+ggplot(most_rep, aes(x = reorder(title, repetition_ratio, colour = date), repetition_ratio)) + geom_bar(stat="identity", width = 0.5, fill = "firebrick3")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 75, vjust = 0.5),
+        plot.title = element_text(hjust = 0.5, size = 16))+
+  xlab("Song") + ylab("Repetition Ratio (%)") + ggtitle("The Ten Most Repetitive Billboard Songs From 2000 to 2018")
+```
+
+This graph validates my measurement method because these songs are, in fact, very dumb and very annoying. 
+
+In case you forgot, here's some of the iconic lyrics to refresh your memory:  
+"Now watch me whip (kill it!) Now watch me nae nae (okay!)"  
+"TURN DOWN FOR WHAT"  
+and my favorite "I'm blue da ba dee da ba daa da ba dee da ba daa, da ba dee da ba daa, da ba dee da ba daao"
+
+```{r, echo = FALSE, message = FALSE}
+#ggplot(billboard, aes(date, repetition_ratio)) + geom_point()
+```
+
+Now, to see whether or not repition ratios have changed over the years, I averaged the ratios for every month between 2000 and 2018 and plotted those average ratios with the months.
+
+```{r by month, fig.align='center', warning = FALSE, echo = FALSE, message = FALSE}
+month_repetition <- billboard %>% 
+  mutate(date = as.character(date)) %>% 
+  mutate(date = substr(date, 1, 7)) %>% 
+  group_by(date) %>% 
+  summarise(avg_rep = mean(repetition_ratio))
+
+ggplot(month_repetition, aes(date, avg_rep)) + geom_point() +
+  
+  scale_x_discrete(breaks = c("2000-01", "2001-01", "2002-01", "2003-01", "2004-01", "2005-01", "2006-01", "2007-01", "2008-01", "2009-01", "2010-01", "2011-01", "2012-01", "2013-01", "2014-01", "2015-01", "2016-01", "2017-01"), labels = c("2000", "2001", "2002", "2003", "2004", "2005", "2006", "2007", "2008", "2009", "2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017"))+
+  
+  theme_minimal()+
+  
+  theme(plot.title = element_text(hjust = 0.5, size = 16))+
+  
+  xlab("Date") + ylab("Average Repetition Ratio (%)") + ggtitle("Average Repetition Ratio by Month")
+```
+
+As we can see, repetitiveness in songs neither increases or decreases substantially through the years. February 2010 had songs that were espically non repetitive, but other than that extreme case, songs from before are just as repetitive as songs from today.
+
+To drive the point home, I further summarized the data by plotting the distributions of the ratios for every year.
+
+```{r by year, fig.align='center', warning = FALSE, echo = FALSE, message = FALSE}
+year_repetition <- billboard %>% 
+  mutate(date = as.character(date)) %>% 
+  mutate(date = substr(date, 1, 4))  
+
+ggplot(year_repetition, aes(date, repetition_ratio)) + geom_boxplot(fill = "deepskyblue")+
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5, size = 16))+
+  xlab("Year") + ylab("Repetition Ratio (%)") + ggtitle("Repetition Ratio by Year")
+```
+Again, we see that average repetetiveness basically stays the same from 2000 to 2018. What this plot shows that the previous plot does not show is the way that ratios vary in each year. The shapes of the distributions look very similar from year to year, which means that repetition ratios vary similarly for all years. For all years, there are about the same number of low repitition ratio songs and high repitition ratio songs with outliers slightly favoring the higher ratios. So not only are the average ratios the same over time, but the variation in ratios are also the same over time.
+
+In conclusion, old people are old. Even though songs today may seem much more annoying than songs from before, previous years had their fair share of annoying songs too. We probably just forget about them. The same way we'll forget about the annoying songs from today when we're telling our kids how great the music was when we were younger.
